@@ -94,19 +94,55 @@ function cleanup(effectFn) {
   effectFn.deps.length = 0
 }
 
+// effect(
+//   () => {
+//     console.log(obj.foo)
+//   },
+//   // options
+//   {
+//     scheduler: (fn) => {
+//       console.log('scheduler run')
+//       setTimeout(fn)
+//     },
+//   }
+// )
+
+// obj.foo++
+
+// console.log('end')
+
+const jobQueue = new Set()
+// 用一个 Promise 来保证 jobQueue 中的副作用函数是异步执行的
+const p = Promise.resolve()
+
+// 用一个变量 isFlushing 来标识是否正在刷新队列
+let isFlushing = false
+// 该函数作用是，在一个周期内，只执行一次 jobQueue 中的副作用函数
+function flushJob() {
+  if (isFlushing) return
+  isFlushing = true
+  p.then(() => {
+    jobQueue.forEach((job) => job())
+  }).finally(() => {
+    isFlushing = false
+  })
+}
+
 effect(
   () => {
     console.log(obj.foo)
   },
-  // options
   {
-    scheduler: (fn) => {
-      console.log('scheduler run')
-      setTimeout(fn)
+    scheduler(fn) {
+      // 每次调度时，将副作用函数添加到 jobQueue 中
+      jobQueue.add(fn)
+      // 调用 flushJob 函数，执行将 jobQueue 中的副作用函数
+      flushJob()
     },
   }
 )
 
 obj.foo++
+obj.foo++
+obj.foo++
 
-console.log('end')
