@@ -2,7 +2,7 @@
 const bucket = new WeakMap()
 
 // 原始数据
-const data = { foo: 1, bar: 2 }
+const data = { foo: 1 }
 // 对原始数据的代理
 const obj = new Proxy(data, {
   // 拦截读取操作
@@ -18,11 +18,13 @@ const obj = new Proxy(data, {
     target[key] = newVal
     // 把副作用函数从桶里取出并执行
     trigger(target, key)
+    return true
   },
 })
 
 function track(target, key) {
-  if (!activeEffect) return
+  console.log('track run')
+  if (!activeEffect) return // 没有正在执行的副作用函数 直接返回
   let depsMap = bucket.get(target)
   if (!depsMap) {
     bucket.set(target, (depsMap = new Map()))
@@ -31,15 +33,17 @@ function track(target, key) {
   if (!deps) {
     depsMap.set(key, (deps = new Set()))
   }
+  // deps就是与当前副作用函数相关的依赖集合
   deps.add(activeEffect)
+  // 将该依赖集合存储到activeEffect.deps中
   activeEffect.deps.push(deps)
 }
 
 function trigger(target, key) {
+  console.log('trigger run')
   const depsMap = bucket.get(target)
   if (!depsMap) return
   const effects = depsMap.get(key)
-
   const effectsToRun = new Set()
   effects &&
     effects.forEach((effectFn) => {
@@ -48,43 +52,42 @@ function trigger(target, key) {
       }
     })
   effectsToRun.forEach((effectFn) => {
+    // 如果副作用函数有 调度器，则调用调度器，并将副作用函数作为参数传入
     if (effectFn.options.scheduler) {
       effectFn.options.scheduler(effectFn)
     } else {
       effectFn()
     }
   })
-  // effects && effects.forEach(effectFn => effectFn())
 }
 
 // 用一个全局变量存储当前激活的 effect 函数
 let activeEffect
-// effect 栈
 const effectStack = []
 
 function effect(fn, options = {}) {
   const effectFn = () => {
+    console.log('clean run')
     cleanup(effectFn)
-    // 当调用 effect 注册副作用函数时，将副作用函数复制给 activeEffect
+    // 当调用 effect 注册副作用函数时，将副作用函数赋值给 activeEffect
     activeEffect = effectFn
-    // 在调用副作用函数之前将当前副作用函数压栈
+    // 调用前将当前副作用函数压入栈中
     effectStack.push(effectFn)
+    // 存储fn的执行结果
     const res = fn()
-    // 在当前副作用函数执行完毕后，将当前副作用函数弹出栈，并还原 activeEffect 为之前的值
+    // 副作用函数执行后，将当前副作用函数从栈中弹出
     effectStack.pop()
     activeEffect = effectStack[effectStack.length - 1]
-
     return res
   }
-  // 将 options 挂在到 effectFn 上
+  // 将 options 挂载到 effectFn 上
   effectFn.options = options
   // activeEffect.deps 用来存储所有与该副作用函数相关的依赖集合
   effectFn.deps = []
-  // 执行副作用函数
+  // 如果传入 lazy 选项，则不会立即执行副作用函数
   if (!options.lazy) {
     effectFn()
   }
-
   return effectFn
 }
 
@@ -96,50 +99,8 @@ function cleanup(effectFn) {
   effectFn.deps.length = 0
 }
 
-// =========================
+const effectFn = effect(() => obj.foo + 1, { lazy: true })
 
-function computed(getter) {
-  let value
-  let dirty = true
-  console.log('in computed');
-  const effectFn = effect(getter, {
-    lazy: true,
-    scheduler() {
-      console.log('in scheduler');
-      if (!dirty) {
-        dirty = true
-        trigger(obj, 'value')
-      }
-    },
-  })
+const value = effectFn()
 
-  const obj = {
-    get value() {
-      if (dirty) {
-        value = effectFn()
-        dirty = false
-      }
-      track(obj, 'value')
-      return value
-    },
-  }
-
-  return obj
-}
-
-const sumRes = computed(() => obj.foo + obj.bar)
-
-console.log(sumRes.value)
-obj.foo++
-
-console.log(sumRes.value)
-
-// obj.foo++
-
-// console.log(sumRes.value)
-
-// effect(() => {
-//   console.log(sumRes.value)
-// })
-
-// obj.foo++
+console.log(value)
