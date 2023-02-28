@@ -125,7 +125,7 @@ function watch(source, cb, options = {}) {
 
   const job = () => {
     newValue = effectFn()
-    // 如果有过期回调，则执行过期回调
+    // 在调用回调函数cb前，先调用过期回调
     if (cleanup) {
       cleanup()
     }
